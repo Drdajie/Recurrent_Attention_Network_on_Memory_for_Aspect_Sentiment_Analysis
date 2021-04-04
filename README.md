@@ -1,2 +1,2 @@
 # Recurrent_Attention_Network_on_Memory_for_Aspect_Sentiment_Analysis
-对《Recurrent Attention Network on Memory for Aspect Sentiment Analysis》这篇论文的复现
+数据集和 embedding 文件需要自己导入，并在 Hyper_Parameters.py 文件中修改相应文件路径 
