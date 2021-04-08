@@ -54,37 +54,42 @@ class RAM(nn.Module):
         memory_len = torch.sum(text_raw_indices != 0, dim=-1)
         aspect_len = torch.sum(aspect_indices != 0, dim=-1)
         nonzeros_aspect = aspect_len.float()
-
+        #1_Memory 部分
+        #1,1_得到 Memory 部分
         memory = self.embed(text_raw_indices)
         memory, (_, _) = self.bi_lstm_context(memory, memory_len)
+        #1.2_给 Memory 加位置信息
         memory = self.locationed_memory(memory, memory_len, left_len, aspect_len)
 
-        #论文中
+        #2_Recurrent Attention 部分
+        #2.1_获得 aspect 的表示（取平均） -> 因为 et 相当于为查询向量
         aspect = self.embed(aspect_indices)
         aspect = torch.sum(aspect, dim=1)
         aspect = torch.div(aspect, nonzeros_aspect.unsqueeze(-1))
+        #2.2_得到 e0（文中定为 0 向量）
         et = torch.zeros_like(aspect).to(self.opt.device)
-
+        #2.3_循环部分
         batch_size = memory.size(0)
         seq_len = memory.size(1)
-        #et = et.double()
-        #aspect = aspect.float()
         memory = memory.float()
-        #print(memory.dtype,'\n',et.dtype,'\n',aspect.dtype)
         for _ in range(self.opt.hops):
+            #2.3.1_打分
+            #(1)_准备 [m,et-1,vτ] -> 论文中公式的矩阵形式
             a = torch.cat([memory,
                        torch.zeros(batch_size, seq_len, self.opt.embedding_dim,dtype=torch.float32).to(
                            self.opt.device) + et.unsqueeze(1),
                        torch.zeros(batch_size, seq_len, self.opt.embedding_dim,dtype=torch.float32).to(
                            self.opt.device) + aspect.unsqueeze(1)],
-                      dim=-1)
+                      dim=-1) #加法部分用了广播机制
             a = torch.tensor(a,dtype=torch.float32).to(self.opt.device)
+            #(2)_打分 -> 论文中使用一个线性变换作为打分函数
             g = self.att_linear(a)
+            #2.3.2_计算权重
             alpha = F.softmax(g, dim=1)
+            #2.3.3_得到 attention layer 后的表示
             memory = memory.float()
             i = torch.bmm(alpha.transpose(1, 2), memory).squeeze(1)
-            #i = torch.tensor(i,dtype=torch.float32).to(self.opt.device)
-            #et = torch.tensor(et,dtype=torch.float32).to(self.opt.device)
+            #2.3.4_送入 GRU 得到 et
             et = self.gru_cell(i, et)
         out = self.dense(et)
         return out
